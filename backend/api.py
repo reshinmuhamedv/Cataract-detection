@@ -13,7 +13,7 @@ from model import QCCNN
 app = FastAPI(
     title="Cataract Detection Qiskit API",
     description="Quantum-Classical CNN (Qiskit + PyTorch) for automated cataract detection",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -24,7 +24,8 @@ app.add_middleware(
 )
 
 BASE = os.path.dirname(__file__)
-MODEL_PATH = os.path.join(BASE, "Trained_models", "best_qccnn_model.pth")
+# Updated to match the improved model filename from Colab
+MODEL_PATH = os.path.join(BASE, "Trained_models", "cataract_qcnn_model.pth")
 
 # Global model state
 model = None
@@ -34,7 +35,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def startup():
     global model
     try:
-        print(f"Loading Qiskit model from {MODEL_PATH}")
+        print(f"Loading Improved QC-CNN model from {MODEL_PATH}")
         model = QCCNN()
         
         if os.path.exists(MODEL_PATH):
@@ -45,11 +46,11 @@ def startup():
             else:
                 model.load_state_dict(checkpoint)
         else:
-            print("WARNING: Model weights file not found!")
+            print(f"WARNING: Model weights file not found at {MODEL_PATH}!")
             
         model.to(device)
         model.eval()
-        print("QC-CNN Model successfully initialized.")
+        print("Improved QC-CNN Model successfully initialized.")
     except Exception as e:
         print(f"Error initializing QC-CNN: {e}")
         model = None
@@ -57,10 +58,11 @@ def startup():
 @app.get("/")
 def root():
     return {
-        "name": "Cataract Detection API (Qiskit/PyTorch)",
+        "name": "Improved Cataract Detection API (Qiskit/PyTorch)",
         "model_loaded": model is not None,
         "resolution": "64x64",
-        "channels": 1
+        "channels": 1,
+        "normalization": "[-1, 1]"
     }
 
 @app.get("/health")
@@ -82,8 +84,8 @@ def preprocess_image(file_bytes: bytes) -> torch.Tensor:
     # 3. Resize to 64x64
     img = cv2.resize(img, (64, 64))
     
-    # 4. Normalize (0-1)
-    img = img.astype("float32") / 255.0
+    # 4. Normalize to [-1, 1] (Match transforms.Normalize(mean=[0.5], std=[0.5]))
+    img = (img.astype("float32") / 255.0 - 0.5) / 0.5
     
     # 5. Convert to Tensor (1, 1, 64, 64) -> [Batch, Channel, H, W]
     tensor = torch.from_numpy(img).unsqueeze(0).unsqueeze(0)
@@ -103,16 +105,18 @@ async def predict(file: UploadFile = File(...)):
 
     start_time = time.time()
     with torch.no_grad():
-        # The model returns logits, so we apply sigmoid for probability
+        # The model returns logits
         logits = model(x)
         prob = torch.sigmoid(logits).item()
     
     inference_time = (time.time() - start_time) * 1000
 
     # Label logic: 0 = normal, 1 = cataract
-    # training labels: classes=["normal","cataract"] -> normal=0, cataract=1
-    if prob >= 0.5:
+    # Improved Colab uses 0.3 threshold for better recall
+    threshold = 0.3
+    if prob >= threshold:
         label = "cataract"
+        # For display confidence, we can show the probability relative to threshold or just raw prob
         confidence = prob
     else:
         label = "normal"
@@ -121,9 +125,13 @@ async def predict(file: UploadFile = File(...)):
     return {
         "prediction": label,
         "probability": round(confidence, 4),
-        "model_type": "QC-CNN (Qiskit)",
+        "model_type": "Improved QC-CNN (Qiskit)",
         "inference_time_ms": round(inference_time, 2),
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     import uvicorn
