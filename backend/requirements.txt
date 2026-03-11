@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+torchvision
+qiskit
+qiskit-aer
+qiskit-machine-learning
+numpy
+opencv-python
+scikit-learn
+matplotlib
+supabase
+python-dotenv
+Pillow
